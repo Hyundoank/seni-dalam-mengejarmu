@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Art of Chasing You — Magnolia Celebration</title>
+<style>
+  :root { --text:#fff6f1; --muted:rgba(255,246,241,.6); }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { height:100%; overflow:hidden; background:#1d1420; }
+  body { font-family:"Cormorant Garamond",Georgia,serif; color:var(--text); }
+  #bg { position:fixed; inset:0; background:linear-gradient(180deg,#2a1b2d 0%,#4a2b40 55%,#7a4a56 100%); }
+  canvas { position:fixed; inset:0; width:100%; height:100%; touch-action:none; }
+  #stage { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+           padding:0 8vw; pointer-events:none; text-align:center; }
+  #lyric { font-size:clamp(28px,5.5vw,64px); line-height:1.35; font-style:italic; letter-spacing:.02em;
+           transition:opacity .7s ease; max-width:900px; }
+  #lyric.out { opacity:0; }
+  #lyric .w { display:inline-block; margin:0 .18em; opacity:0; transform:translateY(14px);
+              filter:blur(6px); transition:opacity .6s ease, transform .6s ease, filter .6s ease; }
+  #lyric .w.on { opacity:1; transform:none; filter:none; }
+  #ui { position:fixed; left:0; right:0; bottom:18px; display:flex; flex-direction:column; align-items:center; gap:8px; z-index:5; }
+  #title { font-size:14px; letter-spacing:.2em; text-transform:uppercase; color:var(--muted); }
+  #btns { display:flex; gap:10px; align-items:center; }
+  button, label.btn { font:inherit; font-size:16px; color:var(--text); background:rgba(255,246,241,.12);
+           border:1px solid rgba(255,246,241,.35); padding:7px 20px; border-radius:999px; cursor:pointer; }
+  button:hover, label.btn:hover { background:rgba(255,246,241,.22); }
+  #hint { font-size:13px; color:var(--muted); }
+  input[type=file] { display:none; }
+</style>
+</head>
+<body>
+<div id="bg"></div>
+<canvas id="c"></canvas>
+<div id="stage"><div id="lyric" class="out"></div></div>
+
+<div id="ui">
+  <div id="title">The Art of Chasing You - Magnolia Celebration</div>
+  <div id="btns">
+    <button id="play">▶ Putar</button>
+    <label class="btn">Pilih MP3<input type="file" id="file" accept="audio/*"></label>
+  </div>
+  <div id="hint">Sentuh layar untuk memekarkan magnolia · tahan untuk hujan kelopak</div>
+</div>
+
+<!-- Taruh file lagu (yang kamu miliki) di folder yang sama dengan nama ini, atau pakai tombol "Pilih MP3" -->
+<audio id="audio" src="the-art-of-chasing-you.mp3" preload="auto"></audio>
+
+<script>
+
+const LYRICS = [
+  { t: 2.4, text: "Fear of your way" },
+  { t: 5.8, text: "Of getting away from me" },
+  { t: 8.7, text: "Cause I" },
+  { t: 11.7, text: "wanna know the way to you" },
+  { t: 14.8, text: "And i want to understand" },
+  { t: 18.6, text: "The art of chasing you" },
+  { t: 21.6, text: "Cause I" },
+  { t: 24.5, text: "wanna know the way to you" },
+  { t: 27.6, text: "And i want to understand" },
+  { t: 31.7, text: "The art of chasing you..." },
+  { t: 36.9, text: "😜" },
+];
+
+const audio = document.getElementById('audio');
+const lyricEl = document.getElementById('lyric');
+const playBtn = document.getElementById('play');
+let useClock = false, clockPlaying = false, clockStart = 0, clockOffset = 0;
+
+function getTime() {
+  if (!useClock) return audio.currentTime;
+  return clockPlaying ? (performance.now() - clockStart) / 1000 : clockOffset;
+}
+
+function startPlayback() {
+  audio.play().then(() => { useClock = false; setBtn(true); }).catch(() => {
+    useClock = true; clockPlaying = true; clockStart = performance.now() - clockOffset * 1000; setBtn(true);
+  });
+}
+function pausePlayback() {
+  if (useClock) { clockOffset = getTime(); clockPlaying = false; } else audio.pause();
+  setBtn(false);
+}
+function setBtn(p) { playBtn.textContent = p ? '❚❚ Jeda' : '▶ Putar'; }
+playBtn.onclick = () => {
+  const playing = useClock ? clockPlaying : !audio.paused;
+  playing ? pausePlayback() : startPlayback();
+};
+document.getElementById('file').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  audio.src = URL.createObjectURL(f); useClock = false; clockPlaying = false;
+  audio.currentTime = 0; startPlayback();
+};
+audio.onended = () => setBtn(false);
+
+let cur = -2, words = [];
+function build(i) {
+  lyricEl.innerHTML = ''; words = [];
+  if (i < 0) { lyricEl.classList.add('out'); return; }
+  LYRICS[i].text.split(/\s+/).forEach(w => {
+    const s = document.createElement('span');
+    s.className = 'w'; s.textContent = w;
+    lyricEl.appendChild(s); words.push(s);
+  });
+  lyricEl.classList.remove('out');
+}
+
+function updateLyrics() {
+  const t = getTime();
+  let idx = -1;
+  for (let i = 0; i < LYRICS.length; i++) if (t >= LYRICS[i].t) idx = i;
+  if (idx !== cur) { cur = idx; build(idx); }
+  if (idx < 0) return;
+
+  const L = LYRICS[idx], n = words.length;
+  const nextT = LYRICS[idx + 1] ? LYRICS[idx + 1].t : L.t + 8;
+  const step = Math.min(0.5, Math.max(0.12, (nextT - L.t) * 0.7 / n));   // jeda antar kata
+  const count = Math.floor((t - L.t) / step) + 1;
+  words.forEach((s, k) => s.classList.toggle('on', k < count));
+  const holdEnd = Math.min(nextT, L.t + n * step + 2.5);                 // kapan baris memudar
+  lyricEl.classList.toggle('out', t > holdEnd - 0.7);
+}
+
+
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+let W, H, DPR;
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight;
+  cv.width = W * DPR; cv.height = H * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+addEventListener('resize', resize); resize();
+
+const rand = (a, b) => a + Math.random() * (b - a);
+const TIPS = ['#fffaf4', '#fff1ea', '#fde6e4', '#fbdce0'];   // putih gading -> merah muda lembut
+const BASES = ['#f2b9c6', '#eaa5b8', '#f4c4c9'];             // semburat merah muda di pangkal
+
+let petals = [], blooms = [];
+
+function petal(x, y, vx, vy, size, grav) {
+  petals.push({ x, y, vx, vy, s: size, grav: grav ?? 0.012,
+    rot: rand(0, 6.28), vr: rand(-0.03, 0.03), ph: rand(0, 6.28), sw: rand(0.8, 1.6),
+    flip: rand(0, 6.28), vf: rand(0.02, 0.05),
+    tip: TIPS[(Math.random() * TIPS.length) | 0], base: BASES[(Math.random() * BASES.length) | 0] });
+}
+
+// bentuk kelopak magnolia: lebar, sedikit meruncing di pangkal, ujung membulat
+function drawPetal(s, tip, base, alpha) {
+  const g = ctx.createLinearGradient(0, s, 0, -s);
+  g.addColorStop(0, base); g.addColorStop(0.45, tip); g.addColorStop(1, tip);
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  ctx.moveTo(0, s);
+  ctx.bezierCurveTo(s * 0.35, s * 0.6, s * 0.95, -s * 0.1, s * 0.55, -s * 0.8);
+  ctx.bezierCurveTo(s * 0.3, -s * 1.1, -s * 0.3, -s * 1.1, -s * 0.55, -s * 0.8);
+  ctx.bezierCurveTo(-s * 0.95, -s * 0.1, -s * 0.35, s * 0.6, 0, s);
+  ctx.closePath();
+  ctx.fillStyle = g; ctx.fill();
+  ctx.lineWidth = 0.6; ctx.strokeStyle = 'rgba(190,120,140,.35)'; ctx.stroke();
+  // urat tengah
+  ctx.beginPath(); ctx.moveTo(0, s * 0.85); ctx.lineTo(0, -s * 0.6);
+  ctx.strokeStyle = 'rgba(190,120,140,.25)'; ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+// bunga magnolia mekar saat disentuh
+function bloom(x, y) {
+  const layers = [{ n: 6, r: 1, off: 0 }, { n: 6, r: 0.8, off: Math.PI / 6 }, { n: 4, r: 0.55, off: 0.4 }];
+  const size = rand(30, 44);
+  blooms.push({ x, y, size, age: 0, layers, spin: rand(-0.004, 0.004), a0: rand(0, 6.28) });
+  for (let i = 0; i < 12; i++) {                               // kelopak terlepas
+    const a = rand(0, 6.28), sp = rand(0.6, 2.4);
+    petal(x, y, Math.cos(a) * sp, Math.sin(a) * sp - 0.8, rand(8, 15), 0.03);
+  }
+}
+
+function drawBloom(b) {
+  const open = Math.min(1, b.age / 40);                         // 0..1 saat mekar
+  const fade = b.age > 110 ? 1 - (b.age - 110) / 40 : 1;
+  const e = 1 - Math.pow(1 - open, 3);
+  ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.a0 + b.age * b.spin);
+  b.layers.forEach((L, li) => {
+    for (let k = 0; k < L.n; k++) {
+      const a = L.off + (k / L.n) * Math.PI * 2;
+      ctx.save(); ctx.rotate(a);
+      ctx.translate(0, -b.size * L.r * 0.55 * e);
+      ctx.scale(0.55 + 0.45 * e, 1);
+      const ps = b.size * L.r * (0.35 + 0.65 * e) * 0.8;
+      drawPetal(ps, TIPS[(li + k) % TIPS.length], BASES[(li * 2 + k) % BASES.length], fade);
+      ctx.restore();
+    }
+  });
+  // putik di tengah
+  ctx.globalAlpha = fade;
+  ctx.fillStyle = '#d9c27a';
+  for (let i = 0; i < 9; i++) {
+    const a = i * 0.7;
+    ctx.beginPath(); ctx.arc(Math.cos(a) * 3 * e, Math.sin(a) * 3 * e, 1.6, 0, 6.28); ctx.fill();
+  }
+  ctx.restore(); ctx.globalAlpha = 1;
+}
+
+// input: sentuh = mekar, tahan = hujan kelopak, geser = kelopak berjatuhan
+let down = false, px = 0, py = 0, lastMove = 0;
+cv.addEventListener('pointerdown', e => { down = true; px = e.clientX; py = e.clientY; bloom(px, py); });
+cv.addEventListener('pointermove', e => {
+  px = e.clientX; py = e.clientY;
+  if (performance.now() - lastMove > 70 && (down || Math.random() < 0.4)) {
+    petal(px, py, rand(-0.4, 0.4), rand(0, 0.5), rand(7, 12));
+    lastMove = performance.now();
+  }
+});
+addEventListener('pointerup', () => down = false);
+addEventListener('pointercancel', () => down = false);
+
+let frame = 0;
+function loop() {
+  frame++;
+  ctx.clearRect(0, 0, W, H);
+
+  // kelopak ambient jatuh pelan dari atas
+  if (frame % 14 === 0) petal(rand(-20, W + 20), -20, rand(-0.2, 0.5), rand(0.35, 0.8), rand(8, 16), 0.002);
+  if (down && frame % 3 === 0) petal(px + rand(-30, 30), py + rand(-10, 10), rand(-0.5, 0.5), rand(0.2, 0.8), rand(8, 15));
+
+  blooms.forEach(b => { b.age++; drawBloom(b); });
+  blooms = blooms.filter(b => b.age < 150);
+
+  for (const p of petals) {
+    p.vy = Math.min(p.vy + p.grav, 1.6);
+    p.vx *= 0.99;
+    p.x += p.vx + Math.sin(frame * 0.02 * p.sw + p.ph) * 0.55;
+    p.y += p.vy;
+    p.rot += p.vr; p.flip += p.vf;
+    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+    ctx.scale(Math.abs(Math.cos(p.flip)) * 0.6 + 0.4, 1);     // efek berputar di udara
+    drawPetal(p.s, p.tip, p.base, 0.95);
+    ctx.restore();
+  }
+  petals = petals.filter(p => p.y < H + 30 && p.x > -60 && p.x < W + 60);
+  if (petals.length > 400) petals.splice(0, petals.length - 400);
+
+  updateLyrics();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
